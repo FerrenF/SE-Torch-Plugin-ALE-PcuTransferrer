@@ -148,6 +148,8 @@ Also sorting is possible with -orderby=blocks|name|pcu
  - Lists all Grids and allows for filtering by player or faction and custom sorting.
 - !listnoauthor [-gps] [-position] [-id]
  - Lists all grids which have at least 1 block without authorship.
+- !listnoowner [-gps] [-position] [-id] [-npc] [-block]
+ - Lists all grids which have at least 1 block owned by nobody. Using `-block`, optionally lists every block on the grid that does not have an owner.
 - !checkusage player [-npc] [-online] [-faction=&lt;Tag&gt;] [-orderby=&lt;pcu|block|name&gt;] [-minblocks=&lt;number&gt;] [-minpcu=&lt;number&gt;]
  - Outputs the PCU and Blocks of ALL players on the server. Ordered by Block-Count by default. With min blocks and pcu 1.
 - !checkusage faction [-npc] [-orderby=&lt;pcu|block|name&gt;] [-minblocks=&lt;number&gt;] [-minpcu=&lt;number&gt;]
