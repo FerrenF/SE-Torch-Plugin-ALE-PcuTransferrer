@@ -5,11 +5,14 @@ using Sandbox.Game.Entities.Cube;
 using Sandbox.Game.World;
 using Sandbox.ModAPI;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
+using System.Windows.Documents;
 using Torch.Commands;
 using Torch.Commands.Permissions;
 using Torch.Mod;
 using Torch.Mod.Messages;
+using Torch.Utils;
 using VRage.Game.Entity;
 using VRage.Game.ModAPI;
 using VRageMath;
@@ -581,13 +584,15 @@ namespace ALE_GridManager.Commands {
             }
         }
 
-        [Command("listnoowner", "Lists all grids which contain blocks not owned by a player or npc.")]
+        [Command("listnoowner", "Lists all grids which contain blocks not owned by a player or npc. Args: (-gps, -position, -id, -block, -npc)")]
         [Permission(MyPromoteLevel.Moderator)]
         public void ListNoOwner(bool ignoreNobody = false) {
 
             bool showGps = false;
             bool showPosition = false;
             bool showId = false;
+            bool showBlocks = false;
+            bool showNPCs = false;
 
             List<string> args = Context.Args;
             for (int i = 0; i < args.Count; i++) {
@@ -600,76 +605,75 @@ namespace ALE_GridManager.Commands {
 
                 if (args[i] == "-id")
                     showId = true;
+
+                if (args[i] == "-block")
+                    showBlocks = true;
+
+                if (args[i] == "-npc")
+                    showNPCs = true;
             }
 
             StringBuilder sb = new StringBuilder();
 
-            HashSet<MyCubeGrid> grids = new HashSet<MyCubeGrid>();
 
-            foreach (MyEntity entity in MyEntities.GetEntities()) {
 
-                if (!(entity is MyCubeGrid grid))
-                    continue;
+            // Get all entities of type MyCubrGrid and filter out NPC spawned grids.
+            HashSet<MyCubeGrid> grids = new HashSet<MyCubeGrid>(
+                MyEntities.GetEntities().Where(
+                    (x) => x.GetType().Equals(typeof(MyCubeGrid))
+                ).Cast<MyCubeGrid>());
 
-                if (grid.Physics == null)
-                    continue;
-
-                grids.Add(grid);
+            if (!showNPCs)
+            {
+                var NpcEnt = MySession.Static.Players.GetNPCIdentities();
+                grids = new HashSet<MyCubeGrid>(grids.Where((g) => !g.IsNpcSpawnedGrid && g.BigOwners.Intersect(NpcEnt).Count() == 0));
             }
-
-            HashSet<long> identities = new HashSet<long>();
-
-            foreach (var identity in MySession.Static.Players.GetAllIdentities())
-                identities.Add(identity.IdentityId);
-
-            if (ignoreNobody)
-                identities.Add(0L);
 
             foreach (MyCubeGrid grid in grids) {
 
-                int numberNobodyBlocks = 0;
 
-                foreach (var block in grid.GetBlocks()) {
+                HashSet<MySlimBlock> nobodyBlocks = new HashSet<MySlimBlock>(
+                    grid.GetBlocks().Where(
+                        (g) => !(g.FatBlock == null) 
+                        && g.BlockDefinition.OwnershipIntegrityRatio > 0  // Exclude armor blocks                   
+                        && g.OwnerId == 0L)  // 0L = Nobody
+                    );
 
-                    if (block.FatBlock == null)
-                        continue;
+                if (nobodyBlocks.Count == 0) continue;
 
-                    long ownedBy = block.OwnerId;
 
-                    if (!identities.Contains(ownedBy))
-                        numberNobodyBlocks++;
-                }
+                sb.AppendLine(
+                    $"{grid.DisplayName} - Owned by: {grid.GetGridOwnerName()} - {nobodyBlocks.Count} blocks");
 
-                if (numberNobodyBlocks == 0)
-                    continue;
-
-                var gridPosition = grid.PositionComp.GetPosition();
-                var ownerId = OwnershipUtils.GetOwner(grid);
-                var ownerName = PlayerUtils.GetPlayerNameById(ownerId);
-
-                sb.AppendLine($"{grid.DisplayName} - Owned by: {ownerName} - {numberNobodyBlocks} blocks");
+                if (showPosition) sb.AppendLine(
+                    $"{grid.DisplayName} - Owned by: {grid.GetGridOwnerName()} - {nobodyBlocks.Count} blocks");
 
                 if (showId)
-                    sb.AppendLine("   Id: " + grid.EntityId);
+                    sb.AppendLine("   Entity Id: " + grid.EntityId);
 
                 if (showPosition)
-                    sb.AppendLine($"   X: {gridPosition.X.ToString("#,##0.00")}, Y: {gridPosition.Y.ToString("#,##0.00")}, Z: {gridPosition.Z.ToString("#,##0.00")}");
+                    sb.AppendLine($"   X: {grid.PositionComp.GetPosition().X.ToString("#,##0.00")}, Y: {grid.PositionComp.GetPosition().Y.ToString("#,##0.00")}, Z: {grid.PositionComp.GetPosition().Z.ToString("#,##0.00")}");
 
                 if (showGps && Context.Player != null) {
 
                     var gridGPS = MyAPIGateway.Session?.GPS.Create("--" + grid.DisplayName, ($"{grid.DisplayName} - {grid.GridSizeEnum} - {grid.BlocksCount} blocks"), grid.PositionComp.GetPosition(), true);
-
                     MyAPIGateway.Session?.GPS.AddGps(Context.Player.IdentityId, gridGPS);
                 }
+
+                if (showBlocks) {
+                    int i = 0;
+                    nobodyBlocks.ForEach(
+                            (b) => sb.AppendLine($" {(i+=1)} - Block Name: {b.BlockDefinition.DisplayNameText}")
+                        );
+                    }
+                sb.AppendLine("\n\n");
             }
 
             string title = "Grids without owner";
 
             if (Context.Player == null) {
-
                 Context.Respond(title);
                 Context.Respond(sb.ToString());
-
             } else {
 
                 if(ignoreNobody)
